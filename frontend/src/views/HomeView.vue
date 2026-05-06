@@ -17,10 +17,9 @@
 
     <main
       :class="[
-        'h-screen overflow-hidden pt-14 transition-[padding] duration-[280ms] ease-[cubic-bezier(0.4,0,0.2,1)]',
-        isMobile ? 'pl-0' : 'pl-60',
-      ]"
-    >
+      'h-screen overflow-hidden pt-14 transition-[padding] duration-[280ms] ease-[cubic-bezier(0.4,0,0.2,1)]',
+      isMobile ? 'pl-0' : 'pl-60',
+    ]">
       <div class="flex h-full flex-col gap-4 px-6 pb-5 pt-6">
         <!-- Page Header -->
         <div class="flex flex-shrink-0 items-center justify-between">
@@ -34,17 +33,13 @@
         <!-- Content Area -->
         <div class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d0d0d]">
           <!-- Preview -->
-          <div
-            v-if="activeView === 'preview'"
-            class="content-scroll h-full overflow-y-auto px-6 py-6"
-          >
+          <div v-if="activeView === 'preview'" class="content-scroll h-full overflow-y-auto px-6 py-6">
             <div class="flex min-h-full items-center justify-center">
-              <AnimatedFolder
-                title="Animated Folder"
-                description="Componente animado em Vue, Tailwind e CSS."
-                :files="['Vue', 'Tailwind', 'CSS']"
-                accent-color="#22c55e"
-              />
+              <AnimatedFolder :papers="[
+                { label: 'Vue' },
+                { label: 'Tailwind' },
+                { label: 'CSS' },
+              ]" @select="handleSelectPaper" />
             </div>
           </div>
 

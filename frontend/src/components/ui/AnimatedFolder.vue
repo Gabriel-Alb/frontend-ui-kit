@@ -1,46 +1,65 @@
 <template>
-    <div class="animated-folder-card relative flex w-full max-w-[340px] flex-col items-center bg-transparent p-0 text-center transition-all duration-300 hover:-translate-y-1"
-        :class="{
-            'is-hovering': isHovering && !isExpanded && !isOpening && !isReturning && !isClosing,
-            'is-expanded': isExpanded,
-            'is-opening': isOpening,
-            'is-returning': isReturning,
-            'is-closing': isClosing,
-        }" :style="folderStyle" @mouseenter="isHovering = true" @mouseleave="handleMouseLeave">
+    <div
+        class="animated-folder-card relative flex w-full max-w-[340px] flex-col items-center bg-transparent p-0 text-center transition-all duration-300 hover:-translate-y-1"
+        :class="folderClasses"
+        :style="folderStyle"
+        tabindex="0"
+        @mouseenter="handleMouseEnter"
+        @mouseleave="handleMouseLeave"
+        @click="handleCardClick"
+        @keydown.escape="closeFolder()"
+    >
         <!-- Background glow -->
-        <div class="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-500"
-            :class="{ 'opacity-100': isHovering || isExpanded || isReturning || isClosing }">
+        <div
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-500"
+            :class="{ 'opacity-100': showBackgroundGlow }"
+        >
             <div
-                class="absolute left-1/2 top-8 size-56 -translate-x-1/2 rounded-full bg-[var(--folder-main)]/30 blur-3xl" />
+                class="absolute left-1/2 top-8 size-56 -translate-x-1/2 rounded-full bg-[var(--folder-main)]/30 blur-3xl"
+            />
         </div>
 
-        <!-- Folder Scene -->
+        <!-- Folder scene -->
         <div class="folder-scene relative h-[290px] w-[300px]">
-            <!-- Click area -->
-            <button type="button"
+            <!-- Main click area -->
+            <button
+                type="button"
                 class="folder-trigger absolute inset-x-0 bottom-8 z-20 h-[190px] cursor-pointer border-0 bg-transparent p-0"
-                :aria-label="isExpanded ? 'Pasta expandida' : 'Abrir pasta'" @click="openFolder" />
+                :aria-label="triggerAriaLabel"
+                :aria-expanded="isOpenOrOpening"
+                :disabled="isTriggerDisabled"
+                @click.stop="handleTriggerClick"
+            />
 
             <!-- Floating papers/buttons -->
             <div class="floating-papers">
-                <button v-for="(paper, index) in visiblePapers" :key="paper.label" type="button" class="floating-paper"
-                    :class="`floating-paper-${index + 1}`" @click.stop="selectPaper(paper)">
-                    <span>{{ paper.label }}</span>
+                <button
+                    v-for="(paper, index) in visiblePapers"
+                    :key="getPaperKey(paper, index)"
+                    type="button"
+                    class="floating-paper"
+                    :class="`floating-paper-${index + 1}`"
+                    :aria-label="getPaperAriaLabel(paper, index)"
+                    :disabled="arePapersDisabled"
+                    @click.stop="selectPaper(paper)"
+                >
+                    <span>{{ getPaperLabel(paper, index) }}</span>
                 </button>
             </div>
 
             <!-- Papers inside folder on hover -->
             <div class="inside-papers" aria-hidden="true">
-                <div class="inside-paper inside-paper-front"></div>
-                <div class="inside-paper inside-paper-middle"></div>
-                <div class="inside-paper inside-paper-back"></div>
+                <div class="inside-paper inside-paper-front" />
+                <div class="inside-paper inside-paper-middle" />
+                <div class="inside-paper inside-paper-back" />
             </div>
 
             <!-- Folder body -->
-            <div class="folder-tab"></div>
-            <div class="folder-back"></div>
-            <div class="folder-front"></div>
-            <div class="folder-shadow"></div>
+            <div class="folder-tab" aria-hidden="true" />
+            <div class="folder-back" aria-hidden="true" />
+            <div class="folder-front" aria-hidden="true" />
+            <div class="folder-shadow" aria-hidden="true" />
         </div>
     </div>
 </template>
@@ -49,14 +68,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 const props = defineProps({
-    title: {
-        type: String,
-        default: 'Animated Folder',
-    },
-    description: {
-        type: String,
-        default: 'Passe o mouse para abrir. Clique para expandir os arquivos.',
-    },
     color: {
         type: String,
         default: '#5227ff',
@@ -69,92 +80,235 @@ const props = defineProps({
         type: String,
         default: '#421bdc',
     },
+    neutralColor: {
+        type: String,
+        default: '#4253c0',
+    },
+    paperFrontColor: {
+        type: String,
+        default: '#e0e0e0',
+    },
+    paperMiddleColor: {
+        type: String,
+        default: '#eeeeee',
+    },
+    paperBackColor: {
+        type: String,
+        default: '#ffffff',
+    },
+    paperHoverColor: {
+        type: String,
+        default: '#ffffff',
+    },
+    paperTextColor: {
+        type: String,
+        default: 'rgba(20, 20, 20, 0.62)',
+    },
     papers: {
         type: Array,
         default: () => [
-            { label: 'Vue' },
-            { label: 'Tailwind' },
-            { label: 'CSS' },
+            { id: 'vue', label: 'Vue', value: 'vue' },
+            { id: 'tailwind', label: 'Tailwind', value: 'tailwind' },
+            { id: 'css', label: 'CSS', value: 'css' },
         ],
     },
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['open', 'close', 'select'])
 
-const OPENING_DURATION = 680
-const CLOSING_DURATION = 620
+const FOLDER_STATE = {
+    IDLE: 'idle',
+    HOVERING: 'hovering',
+    OPENING: 'opening',
+    EXPANDED: 'expanded',
+    RETURNING: 'returning',
+}
 
-const isHovering = ref(false)
-const isExpanded = ref(false)
-const isOpening = ref(false)
-const isReturning = ref(false)
-const isClosing = ref(false)
+const ANIMATION_DURATION = {
+    opening: 680,
+    closing: 620,
+    paperReturn: 560,
+    labelOpen: 360,
+    labelReturn: 180,
+}
+
+const folderState = ref(FOLDER_STATE.IDLE)
 
 let openingTimer = null
 let closingTimer = null
 let pendingSelectedPaper = null
 
+// The visual composition supports up to 3 floating papers.
 const visiblePapers = computed(() => props.papers.slice(0, 3))
+
+const isIdle = computed(() => folderState.value === FOLDER_STATE.IDLE)
+const isHovering = computed(() => folderState.value === FOLDER_STATE.HOVERING)
+const isOpening = computed(() => folderState.value === FOLDER_STATE.OPENING)
+const isFullyExpanded = computed(() => folderState.value === FOLDER_STATE.EXPANDED)
+const isReturning = computed(() => folderState.value === FOLDER_STATE.RETURNING)
+
+const isAnimating = computed(() => isOpening.value || isReturning.value)
+
+const isOpenOrOpening = computed(() => (
+    folderState.value === FOLDER_STATE.OPENING ||
+    folderState.value === FOLDER_STATE.EXPANDED
+))
+
+const showBackgroundGlow = computed(() => (
+    isHovering.value ||
+    isOpenOrOpening.value ||
+    isReturning.value
+))
+
+const isTriggerDisabled = computed(() => isAnimating.value)
+
+const arePapersDisabled = computed(() => (
+    !isFullyExpanded.value ||
+    isAnimating.value
+))
+
+const triggerAriaLabel = computed(() => (
+    isFullyExpanded.value ? 'Fechar pasta' : 'Abrir pasta'
+))
+
+const folderClasses = computed(() => ({
+    'is-hovering': isHovering.value,
+    'is-expanded': isOpenOrOpening.value,
+    'is-opening': isOpening.value,
+    'is-returning': isReturning.value,
+}))
 
 const folderStyle = computed(() => ({
     '--folder-main': props.color,
     '--folder-light': props.colorLight,
     '--folder-dark': props.colorDark,
+    '--folder-neutral': props.neutralColor,
+    '--folder-focus': 'rgba(82, 39, 255, 0.85)',
+
+    '--paper-front': props.paperFrontColor,
+    '--paper-middle': props.paperMiddleColor,
+    '--paper-back': props.paperBackColor,
+    '--paper-hover': props.paperHoverColor,
+    '--paper-text': props.paperTextColor,
+
+    '--folder-open-duration': `${ANIMATION_DURATION.opening}ms`,
+    '--folder-close-duration': `${ANIMATION_DURATION.closing}ms`,
+    '--paper-open-duration': `${ANIMATION_DURATION.opening}ms`,
+    '--paper-return-duration': `${ANIMATION_DURATION.paperReturn}ms`,
+    '--paper-label-open-duration': `${ANIMATION_DURATION.labelOpen}ms`,
+    '--paper-label-return-duration': `${ANIMATION_DURATION.labelReturn}ms`,
 }))
 
+function getPaperLabel(paper, index) {
+    if (typeof paper === 'string') {
+        return paper || `Paper ${index + 1}`
+    }
+
+    return paper?.label || paper?.title || paper?.value || `Paper ${index + 1}`
+}
+
+function getPaperKey(paper, index) {
+    const fallbackLabel = getPaperLabel(paper, index)
+
+    const rawKey = typeof paper === 'object' && paper !== null
+        ? paper.id || paper.value || paper.to || paper.href || paper.label
+        : paper
+
+    return `paper-${index}-${String(rawKey || fallbackLabel)}`
+}
+
+function getPaperAriaLabel(paper, index) {
+    return `Selecionar ${getPaperLabel(paper, index)}`
+}
+
 function clearAnimationTimers() {
-    window.clearTimeout(openingTimer)
-    window.clearTimeout(closingTimer)
+    if (openingTimer) {
+        clearTimeout(openingTimer)
+    }
+
+    if (closingTimer) {
+        clearTimeout(closingTimer)
+    }
+
+    openingTimer = null
+    closingTimer = null
+}
+
+function handleMouseEnter() {
+    if (!isIdle.value || isAnimating.value) return
+
+    folderState.value = FOLDER_STATE.HOVERING
+}
+
+function handleMouseLeave() {
+    if (!isHovering.value || isAnimating.value) return
+
+    folderState.value = FOLDER_STATE.IDLE
+}
+
+function handleTriggerClick() {
+    if (isAnimating.value) return
+
+    if (isFullyExpanded.value) {
+        closeFolder()
+        return
+    }
+
+    openFolder()
 }
 
 function openFolder() {
-    if (isExpanded.value || isOpening.value || isReturning.value || isClosing.value) return
+    if (isAnimating.value || (!isIdle.value && !isHovering.value)) return
 
     clearAnimationTimers()
 
     pendingSelectedPaper = null
-    isReturning.value = false
-    isClosing.value = false
-    isExpanded.value = true
-    isOpening.value = true
+    folderState.value = FOLDER_STATE.OPENING
 
-    openingTimer = window.setTimeout(() => {
-        isOpening.value = false
-    }, OPENING_DURATION)
+    emit('open')
+
+    openingTimer = setTimeout(() => {
+        folderState.value = FOLDER_STATE.EXPANDED
+        openingTimer = null
+    }, ANIMATION_DURATION.opening)
 }
 
-function selectPaper(paper) {
-    if (isReturning.value || isClosing.value) return
+function closeFolder(selectedPaper = null) {
+    if (!isFullyExpanded.value || isAnimating.value) return
 
     clearAnimationTimers()
 
-    pendingSelectedPaper = paper
+    pendingSelectedPaper = selectedPaper
+    folderState.value = FOLDER_STATE.RETURNING
 
-    isHovering.value = false
-    isOpening.value = false
+    closingTimer = setTimeout(() => {
+        folderState.value = FOLDER_STATE.IDLE
 
-    /*
-        Aqui está o ajuste principal:
-        - a pasta começa a fechar imediatamente
-        - os papers recolhem ao mesmo tempo
-    */
-    isExpanded.value = false
-    isReturning.value = true
-    isClosing.value = true
-
-    closingTimer = window.setTimeout(() => {
-        isReturning.value = false
-        isClosing.value = false
+        emit('close')
 
         if (pendingSelectedPaper) {
             emit('select', pendingSelectedPaper)
-            pendingSelectedPaper = null
         }
-    }, CLOSING_DURATION)
+
+        pendingSelectedPaper = null
+        closingTimer = null
+    }, ANIMATION_DURATION.closing)
 }
 
-function handleMouseLeave() {
-    isHovering.value = false
+function selectPaper(paper) {
+    if (!isFullyExpanded.value || isAnimating.value || !paper) return
+
+    closeFolder(paper)
+}
+
+function handleCardClick(event) {
+    if (!isFullyExpanded.value || isAnimating.value) return
+
+    const clickedPaper = event.target.closest?.('.floating-paper')
+
+    if (clickedPaper) return
+
+    closeFolder()
 }
 
 onBeforeUnmount(() => {
@@ -163,20 +317,46 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* Base */
 .animated-folder-card {
     --paper-front: #e0e0e0;
     --paper-middle: #eeeeee;
     --paper-back: #ffffff;
+    --paper-hover: #ffffff;
+    --paper-text: rgba(20, 20, 20, 0.62);
 
+    --folder-main: #5227ff;
+    --folder-light: #6438ff;
+    --folder-dark: #421bdc;
     --folder-neutral: #4253c0;
+    --folder-focus: rgba(82, 39, 255, 0.85);
+
+    --folder-open-duration: 680ms;
+    --folder-close-duration: 620ms;
+    --folder-motion-duration: var(--folder-open-duration);
+
+    --paper-open-duration: 680ms;
+    --paper-return-duration: 560ms;
+    --paper-label-open-duration: 360ms;
+    --paper-label-return-duration: 180ms;
 }
+
+.animated-folder-card.is-returning {
+    --folder-motion-duration: var(--folder-close-duration);
+}
+
+/* Scene */
 .folder-scene {
     perspective: 1100px;
     transform-style: preserve-3d;
     isolation: isolate;
 }
 
-/* Shadow */
+/* Folder */
+.folder-trigger:disabled {
+    cursor: default;
+}
+
 .folder-shadow {
     position: absolute;
     left: 50%;
@@ -190,23 +370,11 @@ onBeforeUnmount(() => {
     filter: blur(15px);
     opacity: 0.85;
     transition:
-        width 0.45s ease,
-        opacity 0.45s ease,
-        transform 0.45s ease;
+        width var(--folder-motion-duration) ease,
+        opacity var(--folder-motion-duration) ease,
+        transform var(--folder-motion-duration) ease;
 }
 
-.animated-folder-card.is-hovering .folder-shadow {
-    width: 225px;
-    opacity: 0.95;
-}
-
-.animated-folder-card.is-expanded .folder-shadow {
-    width: 245px;
-    opacity: 1;
-    transform: translateX(-50%) translateY(6px);
-}
-
-/* Folder back */
 .folder-back {
     position: absolute;
     left: 34px;
@@ -221,19 +389,10 @@ onBeforeUnmount(() => {
         0 22px 44px rgba(0, 0, 0, 0.22);
     transform: translateY(0);
     transition:
-        transform 0.48s cubic-bezier(0.2, 0.85, 0.2, 1),
-        box-shadow 0.48s ease;
+        transform var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        box-shadow var(--folder-motion-duration) ease;
 }
 
-.animated-folder-card.is-hovering .folder-back {
-    transform: translateY(-8px);
-}
-
-.animated-folder-card.is-expanded .folder-back {
-    transform: translateY(-10px);
-}
-
-/* Folder tab */
 .folder-tab {
     position: absolute;
     left: 34px;
@@ -257,7 +416,41 @@ onBeforeUnmount(() => {
     background: var(--folder-neutral);
 }
 
-/* Papers inside folder */
+.folder-front {
+    position: absolute;
+    left: 34px;
+    bottom: 82px;
+    z-index: 15;
+    pointer-events: none;
+    width: 232px;
+    height: 158px;
+    border-radius: 18px 18px 26px 26px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 36%),
+        linear-gradient(
+            145deg,
+            var(--folder-light) 0%,
+            var(--folder-main) 45%,
+            var(--folder-dark) 100%
+        );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        inset 0 -20px 30px rgba(0, 0, 0, 0.18),
+        0 18px 34px rgba(0, 0, 0, 0.28);
+    transform-origin: bottom center;
+    transform: translateY(0) scaleX(1) scaleY(1) skewX(0deg);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    transition:
+        left var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        width var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        bottom var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        transform var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        clip-path var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1),
+        border-radius var(--folder-motion-duration) ease,
+        filter var(--folder-motion-duration) ease;
+}
+
+/* Inside papers */
 .inside-papers {
     position: absolute;
     left: 50%;
@@ -281,8 +474,8 @@ onBeforeUnmount(() => {
     transform: translateX(-50%) translateY(58px) scaleY(0.86);
     transform-origin: bottom center;
     transition:
-        opacity 0.28s ease,
-        transform 0.48s cubic-bezier(0.2, 0.85, 0.2, 1);
+        opacity 280ms ease,
+        transform var(--folder-motion-duration) cubic-bezier(0.2, 0.85, 0.2, 1);
 }
 
 .inside-paper-front {
@@ -290,7 +483,7 @@ onBeforeUnmount(() => {
     width: 164px;
     height: 92px;
     background: var(--paper-front);
-    transition-delay: 0.02s;
+    transition-delay: 20ms;
 }
 
 .inside-paper-middle {
@@ -298,7 +491,7 @@ onBeforeUnmount(() => {
     width: 180px;
     height: 82px;
     background: var(--paper-middle);
-    transition-delay: 0.05s;
+    transition-delay: 50ms;
 }
 
 .inside-paper-back {
@@ -306,105 +499,7 @@ onBeforeUnmount(() => {
     width: 196px;
     height: 72px;
     background: var(--paper-back);
-    transition-delay: 0.08s;
-}
-
-.animated-folder-card.is-hovering .inside-paper {
-    opacity: 1;
-}
-
-.animated-folder-card.is-hovering .inside-paper-front {
-    transform: translateX(-50%) translateY(0) scaleY(1);
-}
-
-.animated-folder-card.is-hovering .inside-paper-middle {
-    transform: translateX(-50%) translateY(12px) scaleY(1);
-}
-
-.animated-folder-card.is-hovering .inside-paper-back {
-    transform: translateX(-50%) translateY(24px) scaleY(1);
-}
-
-.animated-folder-card.is-expanded .inside-paper,
-.animated-folder-card.is-returning .inside-paper,
-.animated-folder-card.is-closing .inside-paper {
-    opacity: 0;
-    transform: translateX(-50%) translateY(30px) scale(0.92);
-    transition-delay: 0s;
-}
-
-/* Folder front */
-.folder-front {
-    position: absolute;
-    left: 34px;
-    bottom: 82px;
-    z-index: 15;
-    pointer-events: none;
-
-    width: 232px;
-    height: 158px;
-
-    border-radius: 18px 18px 26px 26px;
-
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 36%),
-        linear-gradient(145deg,
-            var(--folder-light) 0%,
-            var(--folder-main) 45%,
-            var(--folder-dark) 100%);
-
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.18),
-        inset 0 -20px 30px rgba(0, 0, 0, 0.18),
-        0 18px 34px rgba(0, 0, 0, 0.28);
-
-    transform-origin: bottom center;
-    transform: translateY(0) scaleX(1) scaleY(1) skewX(0deg);
-
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-
-    transition:
-        left 0.52s cubic-bezier(0.2, 0.85, 0.2, 1),
-        width 0.52s cubic-bezier(0.2, 0.85, 0.2, 1),
-        bottom 0.52s cubic-bezier(0.2, 0.85, 0.2, 1),
-        transform 0.52s cubic-bezier(0.2, 0.85, 0.2, 1),
-        clip-path 0.52s cubic-bezier(0.2, 0.85, 0.2, 1),
-        border-radius 0.52s ease,
-        filter 0.52s ease;
-}
-
-/* Hover: frente abre, achata e fica mais larga no topo */
-.animated-folder-card.is-hovering .folder-front {
-    left: 10px;
-    bottom: 120px;
-    width: 280px;
-
-    transform: translateY(36px) scaleY(0.58) skewX(0deg);
-
-    clip-path: polygon(0 0,
-            100% 0,
-            91.5% 100%,
-            8.5% 100%);
-
-    border-radius: 22px 22px 34px 34px;
-    filter: saturate(1.08);
-}
-
-/* Expandido */
-.animated-folder-card.is-expanded .folder-front {
-    left: 10px;
-    bottom: 60px;
-    width: 280px;
-
-    transform: translateY(2px) scaleY(0.54) skewX(0deg);
-
-    clip-path: polygon(0 0,
-            100% 0,
-            88% 100%,
-            12% 100%);
-
-    border-radius: 22px 22px 36px 36px;
-    filter: saturate(1.12);
+    transition-delay: 80ms;
 }
 
 /* Floating papers */
@@ -439,7 +534,7 @@ onBeforeUnmount(() => {
     border: 0;
     border-radius: 20px;
     background: var(--paper-front);
-    color: rgba(20, 20, 20, 0.62);
+    color: var(--paper-text);
     font-size: 13px;
     font-weight: 800;
     letter-spacing: -0.03em;
@@ -448,23 +543,27 @@ onBeforeUnmount(() => {
         0 22px 38px rgba(0, 0, 0, 0.24);
     cursor: pointer;
     opacity: 0;
-
     transform:
-        translateX(-50%) translate3d(var(--paper-start-x), var(--paper-start-y), 0) rotate(var(--paper-start-rotate)) scale(var(--paper-start-scale));
-
+        translateX(-50%)
+        translate3d(var(--paper-start-x), var(--paper-start-y), 0)
+        rotate(var(--paper-start-rotate))
+        scale(var(--paper-start-scale));
     transform-origin: center;
     backface-visibility: hidden;
     will-change: transform, opacity;
-
     transition:
         opacity 220ms ease,
         transform 520ms cubic-bezier(0.2, 0.85, 0.2, 1),
-        background 0.2s ease,
-        box-shadow 0.2s ease;
+        background 200ms ease,
+        box-shadow 200ms ease;
 }
 
-.floating-paper:hover {
-    background: #ffffff;
+.floating-paper:disabled {
+    cursor: default;
+}
+
+.floating-paper:hover:not(:disabled) {
+    background: var(--paper-hover);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 1),
         0 30px 54px rgba(0, 0, 0, 0.34);
@@ -523,10 +622,82 @@ onBeforeUnmount(() => {
     --paper-return-delay: 0ms;
 }
 
+/* States */
+.animated-folder-card.is-hovering .folder-shadow {
+    width: 225px;
+    opacity: 0.95;
+}
+
+.animated-folder-card.is-expanded .folder-shadow {
+    width: 245px;
+    opacity: 1;
+    transform: translateX(-50%) translateY(6px);
+}
+
+.animated-folder-card.is-hovering .folder-back {
+    transform: translateY(-8px);
+}
+
+.animated-folder-card.is-expanded .folder-back {
+    transform: translateY(-10px);
+}
+
+.animated-folder-card.is-hovering .folder-front {
+    left: 10px;
+    bottom: 120px;
+    width: 280px;
+    transform: translateY(36px) scaleY(0.58) skewX(0deg);
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        91.5% 100%,
+        8.5% 100%
+    );
+    border-radius: 22px 22px 34px 34px;
+    filter: saturate(1.08);
+}
+
+.animated-folder-card.is-expanded .folder-front {
+    left: 10px;
+    bottom: 60px;
+    width: 280px;
+    transform: translateY(2px) scaleY(0.54) skewX(0deg);
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        88% 100%,
+        12% 100%
+    );
+    border-radius: 22px 22px 36px 36px;
+    filter: saturate(1.12);
+}
+
+.animated-folder-card.is-hovering .inside-paper {
+    opacity: 1;
+}
+
+.animated-folder-card.is-hovering .inside-paper-front {
+    transform: translateX(-50%) translateY(0) scaleY(1);
+}
+
+.animated-folder-card.is-hovering .inside-paper-middle {
+    transform: translateX(-50%) translateY(12px) scaleY(1);
+}
+
+.animated-folder-card.is-hovering .inside-paper-back {
+    transform: translateX(-50%) translateY(24px) scaleY(1);
+}
+
+.animated-folder-card.is-expanded .inside-paper,
+.animated-folder-card.is-returning .inside-paper {
+    opacity: 0;
+    transform: translateX(-50%) translateY(30px) scale(0.92);
+    transition-delay: 0s;
+}
+
 .animated-folder-card.is-expanded .folder-trigger,
 .animated-folder-card.is-opening .folder-trigger,
-.animated-folder-card.is-returning .folder-trigger,
-.animated-folder-card.is-closing .folder-trigger {
+.animated-folder-card.is-returning .folder-trigger {
     pointer-events: none;
 }
 
@@ -535,25 +706,33 @@ onBeforeUnmount(() => {
 }
 
 .animated-folder-card.is-opening .floating-papers,
-.animated-folder-card.is-returning .floating-papers,
-.animated-folder-card.is-closing .floating-papers {
+.animated-folder-card.is-returning .floating-papers {
     pointer-events: none;
 }
 
 .animated-folder-card.is-expanded .floating-paper {
     opacity: 1;
-
     transform:
-        translateX(-50%) translate3d(var(--paper-open-x), var(--paper-open-y), 0) rotate(var(--paper-open-rotate)) scale(var(--paper-open-scale));
+        translateX(-50%)
+        translate3d(var(--paper-open-x), var(--paper-open-y), 0)
+        rotate(var(--paper-open-rotate))
+        scale(var(--paper-open-scale));
 }
 
 .animated-folder-card.is-opening .floating-paper {
-    animation: floatingPaperOpen 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: floatingPaperOpen var(--paper-open-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
     animation-delay: var(--paper-delay);
-
     transition:
-        background 0.2s ease,
-        box-shadow 0.2s ease;
+        background 200ms ease,
+        box-shadow 200ms ease;
+}
+
+.animated-folder-card.is-returning .floating-paper {
+    animation: floatingPaperReturn var(--paper-return-duration) cubic-bezier(0.45, 0, 0.25, 1) both;
+    animation-delay: var(--paper-return-delay);
+    transition:
+        background 200ms ease,
+        box-shadow 200ms ease;
 }
 
 .animated-folder-card.is-expanded .floating-paper span {
@@ -563,79 +742,73 @@ onBeforeUnmount(() => {
 }
 
 .animated-folder-card.is-opening .floating-paper span {
-    animation: floatingPaperLabelOpen 360ms ease both;
+    animation: floatingPaperLabelOpen var(--paper-label-open-duration) ease both;
     animation-delay: calc(var(--paper-delay) + 170ms);
     transition: none;
 }
 
-.animated-folder-card.is-returning .floating-paper {
-    animation: floatingPaperReturn 560ms cubic-bezier(0.45, 0, 0.25, 1) both;
-    animation-delay: var(--paper-return-delay);
-
-    transition:
-        background 0.2s ease,
-        box-shadow 0.2s ease;
-}
-
 .animated-folder-card.is-returning .floating-paper span {
-    animation: floatingPaperLabelReturn 180ms ease both;
+    animation: floatingPaperLabelReturn var(--paper-label-return-duration) ease both;
     transition: none;
 }
 
 .animated-folder-card.is-expanded .floating-paper-1,
 .animated-folder-card.is-returning .floating-paper-1 {
-    background: #eeeeee;
+    background: var(--paper-middle);
 }
 
 .animated-folder-card.is-expanded .floating-paper-2,
 .animated-folder-card.is-returning .floating-paper-2 {
-    background: #ffffff;
+    background: var(--paper-back);
 }
 
 .animated-folder-card.is-expanded .floating-paper-3,
 .animated-folder-card.is-returning .floating-paper-3 {
-    background: #eeeeee;
+    background: var(--paper-middle);
 }
 
 .animated-folder-card.is-expanded:not(.is-opening):not(.is-returning) .floating-paper-1:hover {
     transform:
-        translateX(-50%) translate3d(-104px, -88px, 0) rotate(-13deg) scale(1.08);
+        translateX(-50%)
+        translate3d(-104px, -88px, 0)
+        rotate(-13deg)
+        scale(1.08);
 }
 
 .animated-folder-card.is-expanded:not(.is-opening):not(.is-returning) .floating-paper-2:hover {
     transform:
-        translateX(-50%) translate3d(0, -126px, 0) rotate(4deg) scale(1.12);
+        translateX(-50%)
+        translate3d(0, -126px, 0)
+        rotate(4deg)
+        scale(1.12);
 }
 
 .animated-folder-card.is-expanded:not(.is-opening):not(.is-returning) .floating-paper-3:hover {
     transform:
-        translateX(-50%) translate3d(104px, -88px, 0) rotate(13deg) scale(1.08);
+        translateX(-50%)
+        translate3d(104px, -88px, 0)
+        rotate(13deg)
+        scale(1.08);
 }
 
-.animated-folder-card.is-closing:not(.is-returning) .floating-paper {
-    opacity: 0;
-    transform:
-        translateX(-50%) translate3d(var(--paper-start-x), var(--paper-start-y), 0) rotate(var(--paper-start-rotate)) scale(var(--paper-start-scale));
-    transition-delay: 0s;
-}
-
-.animated-folder-card.is-closing:not(.is-returning) .floating-paper span {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0);
-    transition-delay: 0s;
-}
-
+/* Animations */
 @keyframes floatingPaperOpen {
     0% {
         opacity: 0;
         transform:
-            translateX(-50%) translate3d(var(--paper-start-x), var(--paper-start-y), 0) rotate(var(--paper-start-rotate)) scale(var(--paper-start-scale));
+            translateX(-50%)
+            translate3d(var(--paper-start-x), var(--paper-start-y), 0)
+            rotate(var(--paper-start-rotate))
+            scale(var(--paper-start-scale));
     }
 
     14% {
         opacity: 0;
         transform:
-            translateX(-50%) translate3d(var(--paper-start-x), var(--paper-start-y), 0) rotate(var(--paper-start-rotate)) scale(var(--paper-start-scale));
+            translateX(-50%)
+            translate3d(var(--paper-start-x), var(--paper-start-y), 0)
+            rotate(var(--paper-start-rotate))
+            scale(var(--paper-start-scale));
     }
 
     28% {
@@ -645,7 +818,10 @@ onBeforeUnmount(() => {
     100% {
         opacity: 1;
         transform:
-            translateX(-50%) translate3d(var(--paper-open-x), var(--paper-open-y), 0) rotate(var(--paper-open-rotate)) scale(var(--paper-open-scale));
+            translateX(-50%)
+            translate3d(var(--paper-open-x), var(--paper-open-y), 0)
+            rotate(var(--paper-open-rotate))
+            scale(var(--paper-open-scale));
     }
 }
 
@@ -653,33 +829,50 @@ onBeforeUnmount(() => {
     0% {
         opacity: 1;
         transform:
-            translateX(-50%) translate3d(var(--paper-open-x), var(--paper-open-y), 0) rotate(var(--paper-open-rotate)) scale(var(--paper-open-scale));
+            translateX(-50%)
+            translate3d(var(--paper-open-x), var(--paper-open-y), 0)
+            rotate(var(--paper-open-rotate))
+            scale(var(--paper-open-scale));
     }
 
     18% {
         opacity: 1;
         transform:
-            translateX(-50%) translate3d(calc(var(--paper-open-x) * 0.35),
+            translateX(-50%)
+            translate3d(
+                calc(var(--paper-open-x) * 0.35),
                 calc(var(--paper-open-y) * 0.7),
-                0) rotate(calc(var(--paper-open-rotate) * 0.55)) scale(0.82);
+                0
+            )
+            rotate(calc(var(--paper-open-rotate) * 0.55))
+            scale(0.82);
     }
 
     42% {
         opacity: 1;
         transform:
-            translateX(-50%) translate3d(var(--paper-start-x), -22px, 0) rotate(var(--paper-start-rotate)) scale(0.62);
+            translateX(-50%)
+            translate3d(var(--paper-start-x), -22px, 0)
+            rotate(var(--paper-start-rotate))
+            scale(0.62);
     }
 
     50% {
         opacity: 0;
         transform:
-            translateX(-50%) translate3d(var(--paper-start-x), -4px, 0) rotate(var(--paper-start-rotate)) scale(0.54);
+            translateX(-50%)
+            translate3d(var(--paper-start-x), -4px, 0)
+            rotate(var(--paper-start-rotate))
+            scale(0.54);
     }
 
     100% {
         opacity: 0;
         transform:
-            translateX(-50%) translate3d(var(--paper-start-x), var(--paper-start-y), 0) rotate(var(--paper-start-rotate)) scale(var(--paper-start-scale));
+            translateX(-50%)
+            translate3d(var(--paper-start-x), var(--paper-start-y), 0)
+            rotate(var(--paper-start-rotate))
+            scale(var(--paper-start-scale));
     }
 }
 
@@ -707,12 +900,25 @@ onBeforeUnmount(() => {
     }
 }
 
+/* Accessibility */
+.animated-folder-card:focus-visible,
 .folder-trigger:focus-visible,
 .floating-paper:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.75);
+    outline: 2px solid var(--folder-focus);
     outline-offset: 4px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .animated-folder-card,
+    .animated-folder-card * {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Responsive */
 @media (max-width: 420px) {
     .animated-folder-card {
         max-width: 300px;
