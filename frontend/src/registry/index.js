@@ -37,6 +37,14 @@ export const registry = [
     ),
   },
   {
+    slug: "MagneticDot",
+    label: "Magnetic Dot",
+    category: "components",
+    component: defineAsyncComponent(
+      () => import("../components/ui/magnetic Dot/MagneticDotDemo.vue"),
+    ),
+  },
+  {
     slug: "clickspark",
     label: "Click Spark",
     category: "pointer",
