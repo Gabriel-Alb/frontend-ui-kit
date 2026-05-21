@@ -7,6 +7,7 @@
         :spark-count="8"
         :duration="320"
     />
+    <h1 class="text-3xl">Click around</h1>
 </template>
 
 <script setup>
