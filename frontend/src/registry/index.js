@@ -61,6 +61,14 @@ export const registry = [
     ),
   },
   {
+    slug: "Card3d",
+    label: "3D card",
+    category: "components",
+    component: defineAsyncComponent(
+      () => import("../components/ui/3D-card/Card3dDemo.vue"),
+    ),
+  },
+  {
     slug: "clickspark",
     label: "Click Spark",
     category: "pointer",
