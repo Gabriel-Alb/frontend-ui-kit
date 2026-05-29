@@ -76,6 +76,14 @@ export const registry = [
       () => import("../components/ui/SkillButtons/SkillButtonsDemo.vue"),
     ),
   },
+    {
+    slug: "ShaderPanel",
+    label: "Shader Panel",
+    category: "components",
+    component: defineAsyncComponent(
+      () => import("../components/ui/shader-panel/ShaderPanelDemo.vue"),
+    ),
+  },
   {
     slug: "clickspark",
     label: "Click Spark",
