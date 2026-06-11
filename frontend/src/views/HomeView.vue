@@ -51,10 +51,10 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 
-import AppHeader from '../components/layout/AppHeader.vue'
-import AppSidebar from '../components/layout/AppSidebar.vue'
-import ViewToggle from '../components/layout/ViewToggle.vue'
-import CodeBlock from '../components/ui/CodeBlock/CodeBlock.vue/index.js'
+import AppHeader from '../components/shell/AppHeader.vue'
+import AppSidebar from '../components/shell/AppSidebar.vue'
+import ViewToggle from '../components/shell/ViewToggle.vue'
+import CodeBlock from '../components/ui/CodeBlock/CodeBlock.vue'
 
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useComponentRegistry } from '../composables/useComponentRegistry'
