@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import AnimatedJoaoBobo from './AnimatedWobble.vue/index.js'
+import AnimatedJoaoBobo from './AnimatedWobble.vue'
 
 function handleBuddyClick() {
     console.log('João bobo clicado')

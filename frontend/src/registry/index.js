@@ -20,12 +20,11 @@ export const registry = [
     ),
   },
   {
-    slug: "joãobobo",
+    slug: "joao-bobo",
     label: "João bobo",
     category: "components",
     component: defineAsyncComponent(
-      () =>
-        import("../components/ui/AnimatedWobble/AnimatedWobbleDemo.vue/index.js"),
+      () => import("../components/ui/AnimatedWobble/AnimatedWobbleDemo.vue"),
     ),
   },
   {
@@ -37,7 +36,7 @@ export const registry = [
     ),
   },
   {
-    slug: "MagneticDot",
+    slug: "magnetic-dot",
     label: "Magnetic Dot",
     category: "components",
     component: defineAsyncComponent(
@@ -45,7 +44,7 @@ export const registry = [
     ),
   },
   {
-    slug: "MagneticButton",
+    slug: "magnetic-button",
     label: "Magnetic Button",
     category: "components",
     component: defineAsyncComponent(
@@ -53,7 +52,7 @@ export const registry = [
     ),
   },
   {
-    slug: "MagneticCard",
+    slug: "magnetic-card",
     label: "Magnetic Card",
     category: "components",
     component: defineAsyncComponent(
@@ -61,31 +60,32 @@ export const registry = [
     ),
   },
   {
-    slug: "Card3d",
-    label: "3D card",
+    slug: "card-3d",
+    label: "3D Card",
     category: "components",
     component: defineAsyncComponent(
       () => import("../components/ui/Card3d/Card3dDemo.vue"),
     ),
   },
   {
-    slug: "SkillButtons",
+    slug: "skill-buttons",
     label: "Skill Buttons",
     category: "components",
     component: defineAsyncComponent(
-      () => import("../components/ui/TagButtons/TagButtonsDemo.vue/index.js"),
+      () => import("../components/ui/TagButtons/TagButtonsDemo.vue"),
     ),
   },
   {
-    slug: "GradientCarousel",
-    label: "Gradient Carousel ",
+    slug: "gradient-carousel",
+    label: "Gradient Carousel",
     category: "components",
     component: defineAsyncComponent(
-      () => import("../components/ui/GradientCarousel/GradientCarouselDemo.vue"),
+      () =>
+        import("../components/ui/GradientCarousel/GradientCarouselDemo.vue"),
     ),
   },
   {
-    slug: "clickspark",
+    slug: "click-spark",
     label: "Click Spark",
     category: "pointer",
     component: defineAsyncComponent(
@@ -93,7 +93,7 @@ export const registry = [
     ),
   },
   {
-    slug: "ShaderPanel",
+    slug: "shader-panel",
     label: "Shader Panel",
     category: "Backgrounds",
     component: defineAsyncComponent(
